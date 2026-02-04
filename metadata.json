@@ -1,0 +1,7 @@
+{
+  "name": "RAGMaster AI Chat",
+  "description": "An intelligent chat application featuring Retrieval-Augmented Generation (RAG). Create generic chats using a global knowledge base, or dedicated chats with specific document contexts. Supports PDF parsing and vector search.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
