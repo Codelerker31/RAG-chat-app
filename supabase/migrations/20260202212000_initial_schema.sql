@@ -96,3 +96,11 @@ begin
   limit match_count;
 end;
 $$;
+
+-- Create a storage bucket for documents
+insert into storage.buckets (id, name, public)
+values ('documents', 'documents', true);
+
+-- Set up access policies for the storage bucket
+create policy "Allow all operations on documents bucket"
+on storage.objects for all using ( bucket_id = 'documents' ) with check ( bucket_id = 'documents' );

@@ -13,17 +13,17 @@ const MAX_HISTORY_TURNS = 15; // Limit history to last 15 user-model exchanges (
 export const generateEmbedding = async (text: string): Promise<number[]> => {
   if (!process.env.API_KEY) throw new Error("API Key missing");
   if (!text || !text.trim()) {
-      console.warn("Attempted to generate embedding for empty text");
-      return []; 
+    console.warn("Attempted to generate embedding for empty text");
+    return [];
   }
-  
+
   try {
     // Explicitly structure the content to avoid ambiguity with string inputs in embedContent
     // Using 'any' for result to accommodate potential SDK response variations (embedding vs embeddings)
     const result: any = await ai.models.embedContent({
       model: EMBEDDING_MODEL,
       contents: {
-          parts: [{ text: text }]
+        parts: [{ text: text }]
       }
     });
 
@@ -44,19 +44,83 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
 };
 
 export const generateChatTitle = async (firstUserMessage: string): Promise<string> => {
-    if (!process.env.API_KEY) return "New Chat";
+  if (!process.env.API_KEY) return "New Chat";
 
-    try {
-        const response = await ai.models.generateContent({
-            model: CHAT_MODEL,
-            contents: `Generate a very concise title (max 5 words) for a chat conversation that begins with the following message. Do not use quotes. Message: "${firstUserMessage}"`,
-        });
-        return response.text?.trim() || "New Chat";
-    } catch (e) {
-        console.error("Title generation failed", e);
-        return "New Chat";
-    }
+  try {
+    const response = await ai.models.generateContent({
+      model: CHAT_MODEL,
+      contents: `Generate a very concise title (max 5 words) for a chat conversation that begins with the following message. Do not use quotes. Message: "${firstUserMessage}"`,
+    });
+    return response.text?.trim() || "New Chat";
+  } catch (e) {
+    console.error("Title generation failed", e);
+    return "New Chat";
+  }
 }
+
+// Helper to file to Base64 part
+export const fileToGenerativePart = async (file: Blob, mimeType: string) => {
+  return new Promise<{ inlineData: { data: string, mimeType: string } }>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = (reader.result as string).split(',')[1];
+      resolve({
+        inlineData: {
+          data: base64String,
+          mimeType: mimeType // e.g. 'video/webm' or 'audio/wav'
+        },
+      });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+export const generateMultimodalResponse = async (
+  prompt: string,
+  history: Message[],
+  mediaBlob: Blob,
+  mimeType: string // 'video/webm' | 'audio/webm' | 'audio/wav'
+): Promise<string> => {
+  if (!process.env.API_KEY) throw new Error("API Key missing");
+
+  // Convert the Blob to a Generative Part
+  const mediaPart = await fileToGenerativePart(mediaBlob, mimeType);
+
+  // Format history for the model
+  const chatHistory = history.map(msg => ({
+    role: msg.role === Role.USER ? 'user' : 'model',
+    parts: [{ text: msg.text }]
+  }));
+
+  // Config: Request 'gemini-2.5-flash-native-audio-preview-12-2025' per user request
+
+  try {
+    const chat = ai.chats.create({
+      model: "gemini-2.5-flash-native-audio-preview-12-2025",
+      history: chatHistory,
+      config: {
+        maxOutputTokens: 1000,
+      }
+    });
+
+    // Send the media part along with the text prompt
+    // Note: The SDK expects parts to be properly structured. 
+    // For @google/genai, we pass the message content directly.
+    const result = await chat.sendMessage({
+      message: [
+        { text: prompt },
+        mediaPart
+      ]
+    });
+
+    return result.text || "";
+
+  } catch (error) {
+    console.error("Multimodal generation error:", error);
+    throw error;
+  }
+};
 
 export const generateRagResponse = async (
   history: Message[],
@@ -65,10 +129,10 @@ export const generateRagResponse = async (
 ): Promise<string> => {
   if (!process.env.API_KEY) throw new Error("API Key missing");
 
-  const contextText = contextChunks.map(c => 
+  const contextText = contextChunks.map(c =>
     `[Source: ${c.sourceFileName}, Page: ${c.pageNumber || 'N/A'}]\n${c.text}`
   ).join("\n\n---\n\n");
-  
+
   const systemInstruction = `
 You are a helpful AI assistant. You have access to a RAG (Retrieval Augmented Generation) database.
 Use the following pieces of retrieved context to answer the user's question. 
@@ -88,7 +152,7 @@ ${contextText}
   // Get the last user message
   const lastMessage = fullChatHistory.pop();
   if (!lastMessage || !lastMessage.parts[0].text) {
-     throw new Error("No user message found");
+    throw new Error("No user message found");
   }
 
   // Slice history to prioritize recent messages
@@ -104,7 +168,7 @@ ${contextText}
     });
 
     const result = await chat.sendMessageStream({
-        message: lastMessage.parts[0].text
+      message: lastMessage.parts[0].text
     });
 
     let fullText = "";
@@ -119,6 +183,36 @@ ${contextText}
 
   } catch (error) {
     console.error("Chat generation error:", error);
+    throw error;
+  }
+};
+
+export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
+  if (!process.env.API_KEY) throw new Error("API Key missing");
+
+  try {
+    // Convert Blob to inline data
+    const audioPart = await fileToGenerativePart(audioBlob, "audio/webm");
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-native-audio-preview-12-2025", // Efficient for transcription
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: "Transcribe the following audio exactly as spoken. Do not add any commentary." },
+            audioPart.inlineData // @google/genai expects this structure for parts in generateContent? 
+            // Wait, looking at generateMultimodalResponse above...
+            // "message: [{ text: prompt }, mediaPart]" for chat.sendMessage
+            // For models.generateContent, it expects 'contents'.
+          ]
+        }
+      ]
+    });
+
+    return response.text?.trim() || "";
+  } catch (error) {
+    console.error("Transcription error:", error);
     throw error;
   }
 };

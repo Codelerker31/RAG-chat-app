@@ -48,7 +48,7 @@ export const db = {
       .from('chats')
       .update({ title })
       .eq('id', chatId);
-    
+
     if (error) throw error;
   },
 
@@ -57,7 +57,16 @@ export const db = {
       .from('messages')
       .delete()
       .eq('chat_id', chatId);
-    
+
+    if (error) throw error;
+  },
+
+  async deleteChat(chatId: string): Promise<void> {
+    const { error } = await supabase
+      .from('chats')
+      .delete()
+      .eq('id', chatId);
+
     if (error) throw error;
   },
 
@@ -74,33 +83,33 @@ export const db = {
     const { error } = await supabase.from('messages').insert(records);
     if (error) throw error;
   },
-  
+
   // --- Documents ---
   async getDocuments(): Promise<RagDocument[]> {
     const { data, error } = await supabase
       .from('documents')
       .select('*')
       .order('upload_timestamp', { ascending: false });
-      
+
     if (error) throw error;
-    
+
     // Map DB snake_case to TS camelCase
     return (data || []).map(doc => ({
-        id: doc.id,
-        fileName: doc.file_name,
-        uploadTimestamp: doc.upload_timestamp,
-        scope: doc.scope,
-        chunkCount: doc.chunk_count
+      id: doc.id,
+      fileName: doc.file_name,
+      uploadTimestamp: doc.upload_timestamp,
+      scope: doc.scope,
+      chunkCount: doc.chunk_count
     }));
   },
 
   async addDocument(doc: RagDocument): Promise<void> {
     const { error } = await supabase.from('documents').insert({
-        id: doc.id,
-        file_name: doc.fileName,
-        upload_timestamp: doc.uploadTimestamp,
-        scope: doc.scope,
-        chunk_count: doc.chunkCount
+      id: doc.id,
+      file_name: doc.fileName,
+      upload_timestamp: doc.uploadTimestamp,
+      scope: doc.scope,
+      chunk_count: doc.chunkCount
     });
     if (error) throw error;
   },
@@ -111,36 +120,36 @@ export const db = {
       .from('documents')
       .delete()
       .eq('id', docId);
-      
+
     if (error) throw error;
   },
 
   async deleteDocuments(docIds: string[]): Promise<void> {
     if (docIds.length === 0) return;
-    
+
     const { error } = await supabase
-        .from('documents')
-        .delete()
-        .in('id', docIds);
+      .from('documents')
+      .delete()
+      .in('id', docIds);
 
     if (error) throw error;
   },
 
   // Simulate a "Preview" by fetching text from Page 1
   async getDocumentPageOne(docId: string): Promise<string> {
-      const { data, error } = await supabase
-        .from('rag_chunks')
-        .select('text')
-        .eq('document_id', docId)
-        .eq('page_number', 1)
-        .limit(1)
-        .single();
-      
-      if (error && error.code !== 'PGRST116') { // Ignore "no rows" errors
-          console.error("Preview fetch error", error);
-          throw error;
-      }
-      
-      return data ? data.text : "No text content found for Page 1.";
+    const { data, error } = await supabase
+      .from('rag_chunks')
+      .select('text')
+      .eq('document_id', docId)
+      .eq('page_number', 1)
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // Ignore "no rows" errors
+      console.error("Preview fetch error", error);
+      throw error;
+    }
+
+    return data ? data.text : "No text content found for Page 1.";
   }
 };
