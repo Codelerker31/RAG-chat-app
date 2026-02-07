@@ -17,6 +17,7 @@ async function callGeminiProxy(action: string, payload: any): Promise<any> {
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error("Gemini Proxy Error Details:", errorText);
     throw new Error(`Gemini Proxy Error: ${response.status} ${response.statusText} - ${errorText}`);
   }
 
