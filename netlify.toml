@@ -9,3 +9,11 @@
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY"
   SECRETS_SCAN_OMIT_PATHS = "dist/assets/*"
+
+[dev]
+  framework = "#custom"
+  command = "npm run dev"
+  targetPort = 3000
+  port = 8888
+  publish = "dist"
+  autoLaunch = false

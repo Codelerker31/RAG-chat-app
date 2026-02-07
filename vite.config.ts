@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: '0.0.0.0',
     },
+    base: '/',
     plugins: [react()],
     define: {
       'process.env.SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL),

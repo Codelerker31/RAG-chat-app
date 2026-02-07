@@ -5,7 +5,7 @@ const PROXY_URL = '/api/gemini';
 
 // Model Constants
 const CHAT_MODEL = 'gemini-3-flash-preview';
-const EMBEDDING_MODEL = 'text-embedding-004';
+const EMBEDDING_MODEL = 'gemini-embedding-001';
 const MAX_HISTORY_TURNS = 15;
 
 async function callGeminiProxy(action: string, payload: any): Promise<any> {
@@ -37,7 +37,8 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
   try {
     const result = await callGeminiProxy('embedding', {
       model: EMBEDDING_MODEL,
-      text: text
+      text: text,
+      outputDimensionality: 768
     });
 
     // The proxy should return { values: [...] }
@@ -112,9 +113,9 @@ export const generateMultimodalResponse = async (
         { text: prompt },
         mediaPart
       ],
+      systemInstruction: "You are a helpful AI assistant. Answer the user's questions naturally and conversationally. Use flowing paragraphs and avoid markdown lists or bullet points unless the user explicitly requests a list.",
       config: {
         maxOutputTokens: 4096,
-        systemInstruction: "You are a helpful AI assistant. Answer the user's questions naturally and conversationally. Avoid excessive use of markdown lists or bullet points unless specifically asked or absolutely necessary for clarity. Prefer paragraphs for descriptions.",
       }
     });
 
@@ -125,6 +126,48 @@ export const generateMultimodalResponse = async (
     throw error;
   }
 };
+
+const MAX_CONTEXT_CHARS = 20000; // Approx 5k tokens
+const COMPRESSION_TARGET_CHARS = 10000; // Target size after compression
+
+// Helper to summarize older history
+async function summarizeHistory(history: Message[]): Promise<Message[]> {
+  // Keep the last 4 messages intact (immediate context)
+  const recentMessages = history.slice(-4);
+  const olderMessages = history.slice(0, -4);
+
+  if (olderMessages.length === 0) return history;
+
+  // Convert older messages to text for summarization
+  const messagesText = olderMessages.map(m => `${m.role === Role.USER ? 'User' : 'AI'}: ${m.text}`).join('\n');
+
+  try {
+    const summaryResult = await callGeminiProxy('generate-content', {
+      model: "gemini-3-flash-preview", // Use fast model for summary
+      contents: {
+        parts: [{
+          text: `Summarize the following conversation history into a concise paragraph. Capture key facts, user preferences, and important context. \n\nConversation:\n${messagesText}`
+        }]
+      }
+    });
+
+    const summaryText = summaryResult.text || "Previous conversation summary unavailable.";
+
+    // Create a new "system-like" message with the summary
+    const summaryMessage: Message = {
+      id: "summary-" + Date.now(),
+      role: Role.MODEL,
+      text: `[System Note: Previous conversation summary]: ${summaryText}`,
+      timestamp: Date.now()
+    };
+
+    return [summaryMessage, ...recentMessages];
+
+  } catch (error) {
+    console.error("Failed to summarize history:", error);
+    return history; // Fallback: return original history if summary fails
+  }
+}
 
 export const generateRagResponse = async (
   history: Message[],
@@ -139,8 +182,11 @@ export const generateRagResponse = async (
   const systemInstruction = `
 You are a helpful AI assistant. You have access to a RAG (Retrieval Augmented Generation) database.
 Use the following pieces of retrieved context to answer the user's question. 
-If the answer is not in the context, just say that you don't know based on the provided documents, but you can try to answer from general knowledge if explicitly asked.
+If the answer is not in the context, check if the question is a follow-up or related to the previous conversation history.
+If the question is about the previous conversation, answer it using the conversation history.
+If the question is new and not in the retrieved context, just say that you don't know based on the provided documents.
 Keep answers concise and relevant.
+Use flowing, natural language paragraphs. Do NOT use markdown lists or bullet points for simple enumeration unless absolutely necessary.
 
 Context:
 ${contextText}
@@ -158,8 +204,24 @@ ${contextText}
     throw new Error("No user message found");
   }
 
-  // Slice history to prioritize recent messages
-  const recentHistory = fullChatHistory.slice(-(MAX_HISTORY_TURNS * 2));
+  // Calculate approximate size
+  let totalChars = history.reduce((acc, m) => acc + (m.text?.length || 0), 0) + contextText.length;
+
+  let processedHistory = history;
+
+  // Compress if needed
+  if (totalChars > MAX_CONTEXT_CHARS) {
+    console.log(`Context size ${totalChars} exceeds limit ${MAX_CONTEXT_CHARS}. Compressing...`);
+    processedHistory = await summarizeHistory(history.slice(0, -1)); // Exclude last message (current prompt) from summary
+    // Re-verify size? For now, assume summary is small enough.
+  } else {
+    processedHistory = history.slice(0, -1); // Just exclude the last message which is the prompt
+  }
+
+  const finalHistoryForModel = processedHistory.map(msg => ({
+    role: msg.role === Role.USER ? 'user' : 'model',
+    parts: [{ text: msg.text }]
+  }));
 
   try {
     // For streaming, we need to handle the response differently
@@ -170,9 +232,10 @@ ${contextText}
         action: 'stream-chat',
         payload: {
           model: CHAT_MODEL,
-          history: recentHistory,
+          history: finalHistoryForModel,
           message: lastMessage.parts[0].text,
-          config: { systemInstruction }
+          systemInstruction,
+          config: {}
         }
       })
     });
@@ -204,7 +267,7 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
     const audioPart = await fileToGenerativePart(audioBlob, "audio/webm");
 
     const result = await callGeminiProxy('generate-content', {
-      model: "gemini-2.0-flash-exp",
+      model: "gemini-3-flash-preview",
       contents: {
         role: 'user',
         parts: [

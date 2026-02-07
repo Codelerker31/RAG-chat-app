@@ -470,10 +470,7 @@ const App: React.FC = () => {
   const handleSendMessage = async () => {
     if ((!input.trim() && !selectedImage) || !currentChatId || isProcessing) return;
 
-    if (!process.env.API_KEY) {
-      showToast("Missing API Key. Please configure your environment.", 'error');
-      return;
-    }
+
 
     // Construct text message (append input to image logic if needed)
     // If image exists, we'll handle it specially.

@@ -74,10 +74,10 @@ export default async (request: Request) => {
                 generationConfig: config
             });
 
-            // The SDK expects contents to be in a specific format.
-            // We assume 'contents' passed here matches the SDK requirement or we need to map it.
-            // Simple mapping if payload is slightly different, but likely we pass it directly.
-            const result = await genModel.generateContent({ contents });
+            // The SDK expects contents to be in a specific format (Array).
+            // We ensure it is an array here.
+            const contentsArray = Array.isArray(contents) ? contents : [contents];
+            const result = await genModel.generateContent({ contents: contentsArray });
             const response = await result.response;
             return new Response(JSON.stringify({ text: response.text() }), {
                 headers: { "Content-Type": "application/json" },
@@ -85,9 +85,19 @@ export default async (request: Request) => {
         }
 
         if (action === "embedding") {
-            const { model, text } = payload;
+            const { model, text, outputDimensionality } = payload;
             const embedModel = genAI.getGenerativeModel({ model });
-            const result = await embedModel.embedContent(text);
+
+            let result;
+            if (outputDimensionality) {
+                result = await embedModel.embedContent({
+                    content: { role: 'user', parts: [{ text }] },
+                    outputDimensionality
+                });
+            } else {
+                result = await embedModel.embedContent(text);
+            }
+
             return new Response(JSON.stringify({ values: result.embedding.values }), {
                 headers: { "Content-Type": "application/json" },
             });
