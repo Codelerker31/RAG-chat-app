@@ -97,10 +97,11 @@ export const generateMultimodalResponse = async (
 
   try {
     const chat = ai.chats.create({
-      model: "gemini-2.5-flash-native-audio-preview-12-2025",
+      model: "gemini-3-flash-preview",
       history: chatHistory,
       config: {
-        maxOutputTokens: 1000,
+        maxOutputTokens: 4096,
+        systemInstruction: "You are a helpful AI assistant. Answer the user's questions naturally and conversationally. Avoid excessive use of markdown lists or bullet points unless specifically asked or absolutely necessary for clarity. Prefer paragraphs for descriptions.",
       }
     });
 
@@ -195,19 +196,14 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
     const audioPart = await fileToGenerativePart(audioBlob, "audio/webm");
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-native-audio-preview-12-2025", // Efficient for transcription
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: "Transcribe the following audio exactly as spoken. Do not add any commentary." },
-            audioPart.inlineData // @google/genai expects this structure for parts in generateContent? 
-            // Wait, looking at generateMultimodalResponse above...
-            // "message: [{ text: prompt }, mediaPart]" for chat.sendMessage
-            // For models.generateContent, it expects 'contents'.
-          ]
-        }
-      ]
+      model: "gemini-2.0-flash-exp", // Efficient for transcription
+      contents: {
+        role: 'user',
+        parts: [
+          { text: "Transcribe the following audio exactly as spoken. Do not add any commentary." },
+          audioPart
+        ]
+      }
     });
 
     return response.text?.trim() || "";

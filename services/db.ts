@@ -84,6 +84,19 @@ export const db = {
     if (error) throw error;
   },
 
+  async addMessage(chatId: string, message: Message): Promise<void> {
+    return this.addMessages(chatId, [message]);
+  },
+
+  async deleteMessage(messageId: string): Promise<void> {
+    const { error } = await supabase
+      .from('messages')
+      .delete()
+      .eq('id', messageId);
+
+    if (error) throw error;
+  },
+
   // --- Documents ---
   async getDocuments(): Promise<RagDocument[]> {
     const { data, error } = await supabase

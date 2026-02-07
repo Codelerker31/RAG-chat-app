@@ -1,12 +1,14 @@
 import React from 'react';
 import { Message, Role } from '../types';
-import { DocumentIcon } from './Icon';
+import { DocumentIcon, RefreshIcon } from './Icon';
 
 interface MessageBubbleProps {
     message: Message;
+    isLast?: boolean;
+    onRetry?: () => void;
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isLast, onRetry }) => {
     const isUser = message.role === Role.USER;
 
     // Function to render text with markdown images
@@ -76,6 +78,19 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                     </div>
                 )}
             </div>
+
+            {/* Retry Button - Show for last message (User or AI) if not streaming */}
+            {isLast && !message.isStreaming && onRetry && (
+                <div className={`flex flex-col justify-end ${isUser ? 'mr-2' : 'ml-2'}`}>
+                    <button
+                        onClick={onRetry}
+                        className="p-1.5 text-slate-400 hover:text-violet-500 dark:hover:text-violet-400 transition-colors rounded-full hover:bg-slate-100 dark:hover:bg-slate-700/50"
+                        title="Regenerate response"
+                    >
+                        <RefreshIcon />
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
