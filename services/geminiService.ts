@@ -1,42 +1,50 @@
-import { GoogleGenAI, EmbedContentResponse } from "@google/genai";
+
 import { Message, Role } from "../types";
 
-// Initialize Gemini Client
-// In a real app, strict error handling for missing API KEY is needed.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+const PROXY_URL = '/api/gemini';
 
 // Model Constants
 const CHAT_MODEL = 'gemini-3-flash-preview';
 const EMBEDDING_MODEL = 'text-embedding-004';
-const MAX_HISTORY_TURNS = 15; // Limit history to last 15 user-model exchanges (30 messages)
+const MAX_HISTORY_TURNS = 15;
+
+async function callGeminiProxy(action: string, payload: any): Promise<any> {
+  const response = await fetch(PROXY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, payload }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini Proxy Error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  // Handle streaming response separately if needed, but for simple JSON:
+  if (response.headers.get('content-type')?.includes('application/json')) {
+    return response.json();
+  }
+  return response;
+}
 
 export const generateEmbedding = async (text: string): Promise<number[]> => {
-  if (!process.env.API_KEY) throw new Error("API Key missing");
   if (!text || !text.trim()) {
     console.warn("Attempted to generate embedding for empty text");
     return [];
   }
 
   try {
-    // Explicitly structure the content to avoid ambiguity with string inputs in embedContent
-    // Using 'any' for result to accommodate potential SDK response variations (embedding vs embeddings)
-    const result: any = await ai.models.embedContent({
+    const result = await callGeminiProxy('embedding', {
       model: EMBEDDING_MODEL,
-      contents: {
-        parts: [{ text: text }]
-      }
+      text: text
     });
 
-    // The API might return 'embedding' (singular) or 'embeddings' (plural array) depending on exact endpoint behavior
-    const embeddingValues = result.embedding?.values || result.embeddings?.[0]?.values;
-
-    if (!embeddingValues) {
-      // In case of failure without throwing, checking response structure helps
+    // The proxy should return { values: [...] }
+    if (!result.values) {
       console.error("Embedding response missing values:", JSON.stringify(result));
       throw new Error("Failed to generate embedding");
     }
-
-    return embeddingValues;
+    return result.values;
   } catch (error) {
     console.error("Embedding generation error:", error);
     throw error;
@@ -44,14 +52,14 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
 };
 
 export const generateChatTitle = async (firstUserMessage: string): Promise<string> => {
-  if (!process.env.API_KEY) return "New Chat";
-
   try {
-    const response = await ai.models.generateContent({
+    const result = await callGeminiProxy('generate-content', {
       model: CHAT_MODEL,
-      contents: `Generate a very concise title (max 5 words) for a chat conversation that begins with the following message. Do not use quotes. Message: "${firstUserMessage}"`,
+      contents: {
+        parts: [{ text: `Generate a very concise title (max 5 words) for a chat conversation that begins with the following message. Do not use quotes. Message: "${firstUserMessage}"` }]
+      }
     });
-    return response.text?.trim() || "New Chat";
+    return result.text?.trim() || "New Chat";
   } catch (e) {
     console.error("Title generation failed", e);
     return "New Chat";
@@ -67,7 +75,7 @@ export const fileToGenerativePart = async (file: Blob, mimeType: string) => {
       resolve({
         inlineData: {
           data: base64String,
-          mimeType: mimeType // e.g. 'video/webm' or 'audio/wav'
+          mimeType: mimeType
         },
       });
     };
@@ -80,10 +88,8 @@ export const generateMultimodalResponse = async (
   prompt: string,
   history: Message[],
   mediaBlob: Blob,
-  mimeType: string // 'video/webm' | 'audio/webm' | 'audio/wav'
+  mimeType: string
 ): Promise<string> => {
-  if (!process.env.API_KEY) throw new Error("API Key missing");
-
   // Convert the Blob to a Generative Part
   const mediaPart = await fileToGenerativePart(mediaBlob, mimeType);
 
@@ -93,26 +99,25 @@ export const generateMultimodalResponse = async (
     parts: [{ text: msg.text }]
   }));
 
-  // Config: Request 'gemini-2.5-flash-native-audio-preview-12-2025' per user request
-
   try {
-    const chat = ai.chats.create({
+    // We used 'chat' in SDK, but for multimodal one-shot, 'generate-content' is often easier or we can use 'chat' if we want history.
+    // The previous implementation used chat.sendMessage with history.
+    // Let's use the 'chat' action in our proxy.
+
+    const result = await callGeminiProxy('chat', {
       model: "gemini-3-flash-preview",
       history: chatHistory,
+      message: {
+        role: 'user',
+        parts: [
+          { text: prompt },
+          mediaPart
+        ]
+      },
       config: {
         maxOutputTokens: 4096,
         systemInstruction: "You are a helpful AI assistant. Answer the user's questions naturally and conversationally. Avoid excessive use of markdown lists or bullet points unless specifically asked or absolutely necessary for clarity. Prefer paragraphs for descriptions.",
       }
-    });
-
-    // Send the media part along with the text prompt
-    // Note: The SDK expects parts to be properly structured. 
-    // For @google/genai, we pass the message content directly.
-    const result = await chat.sendMessage({
-      message: [
-        { text: prompt },
-        mediaPart
-      ]
     });
 
     return result.text || "";
@@ -128,7 +133,6 @@ export const generateRagResponse = async (
   contextChunks: { text: string; sourceFileName: string; pageNumber?: number }[],
   onChunk: (text: string) => void
 ): Promise<string> => {
-  if (!process.env.API_KEY) throw new Error("API Key missing");
 
   const contextText = contextChunks.map(c =>
     `[Source: ${c.sourceFileName}, Page: ${c.pageNumber || 'N/A'}]\n${c.text}`
@@ -160,26 +164,35 @@ ${contextText}
   const recentHistory = fullChatHistory.slice(-(MAX_HISTORY_TURNS * 2));
 
   try {
-    const chat = ai.chats.create({
-      model: CHAT_MODEL,
-      history: recentHistory, // Provide limited previous context
-      config: {
-        systemInstruction: systemInstruction,
-      }
+    // For streaming, we need to handle the response differently
+    const response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'stream-chat',
+        payload: {
+          model: CHAT_MODEL,
+          history: recentHistory,
+          message: lastMessage.parts[0].text,
+          config: { systemInstruction }
+        }
+      })
     });
 
-    const result = await chat.sendMessageStream({
-      message: lastMessage.parts[0].text
-    });
+    if (!response.body) throw new Error("No response body");
 
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
     let fullText = "";
-    for await (const chunk of result) {
-      const text = chunk.text; // Access .text property directly
-      if (text) {
-        fullText += text;
-        onChunk(fullText);
-      }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunkText = decoder.decode(value, { stream: true });
+      fullText += chunkText;
+      onChunk(fullText);
     }
+
     return fullText;
 
   } catch (error) {
@@ -189,14 +202,11 @@ ${contextText}
 };
 
 export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
-  if (!process.env.API_KEY) throw new Error("API Key missing");
-
   try {
-    // Convert Blob to inline data
     const audioPart = await fileToGenerativePart(audioBlob, "audio/webm");
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-exp", // Efficient for transcription
+    const result = await callGeminiProxy('generate-content', {
+      model: "gemini-2.0-flash-exp",
       contents: {
         role: 'user',
         parts: [
@@ -206,7 +216,7 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
       }
     });
 
-    return response.text?.trim() || "";
+    return result.text?.trim() || "";
   } catch (error) {
     console.error("Transcription error:", error);
     throw error;
