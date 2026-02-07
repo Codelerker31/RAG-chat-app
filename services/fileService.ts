@@ -1,26 +1,16 @@
 import { createWorker } from 'tesseract.js';
 import { RagChunk } from "../types";
+import * as pdfjsLib from 'pdfjs-dist';
 
-// Declare global PDFJS variable from the CDN script
-declare global {
-  interface Window {
-    pdfjsLib: any;
-  }
-}
-
-// Configure worker
-if (window.pdfjsLib) {
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-}
+// Set worker source to CDN to avoid bundling issues in browser
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const CHUNK_SIZE = 500; // Characters per chunk (approx)
 const OVERLAP = 50;
 
-import { createWorker } from 'tesseract.js';
-
 export const parsePdf = async (file: File): Promise<{ text: string; page: number }[]> => {
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
   const pages: { text: string; page: number }[] = [];
   let worker: Tesseract.Worker | null = null;
