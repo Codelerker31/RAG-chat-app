@@ -108,13 +108,10 @@ export const generateMultimodalResponse = async (
     const result = await callGeminiProxy('chat', {
       model: "gemini-3-flash-preview",
       history: chatHistory,
-      message: {
-        role: 'user',
-        parts: [
-          { text: prompt },
-          mediaPart
-        ]
-      },
+      message: [
+        { text: prompt },
+        mediaPart
+      ],
       config: {
         maxOutputTokens: 4096,
         systemInstruction: "You are a helpful AI assistant. Answer the user's questions naturally and conversationally. Avoid excessive use of markdown lists or bullet points unless specifically asked or absolutely necessary for clarity. Prefer paragraphs for descriptions.",

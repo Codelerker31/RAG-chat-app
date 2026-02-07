@@ -1,5 +1,5 @@
 
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@^0.1.3";
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 
 export default async (request: Request) => {
     const API_KEY = Deno.env.get("GEMINI_API_KEY");
