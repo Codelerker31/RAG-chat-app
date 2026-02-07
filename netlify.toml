@@ -10,6 +10,18 @@
   SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY"
   SECRETS_SCAN_OMIT_PATHS = "dist/assets/*"
 
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+
 [dev]
   framework = "#custom"
   command = "npm run dev"

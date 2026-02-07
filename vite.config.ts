@@ -10,6 +10,12 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
     },
     base: '/',
+    build: {
+      target: 'esnext',
+      outDir: 'dist',
+      assetsDir: 'assets',
+      sourcemap: true
+    },
     plugins: [react()],
     define: {
       'process.env.SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL),

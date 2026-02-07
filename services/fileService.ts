@@ -2,8 +2,8 @@ import { createWorker } from 'tesseract.js';
 import { RagChunk } from "../types";
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Set worker source to CDN to avoid bundling issues in browser
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Set worker source to local public file to avoid CORS/version issues
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 const CHUNK_SIZE = 500; // Characters per chunk (approx)
 const OVERLAP = 50;
@@ -40,8 +40,10 @@ export const parsePdf = async (file: File): Promise<{ text: string; page: number
 
           await page.render({
             canvasContext: context,
-            viewport: viewport
-          }).promise;
+            viewport: viewport,
+            canvasFactory: undefined // Optional, but might shut up ts if it's looking for something else?
+            // Actually, just casting might be safer if types are strict
+          } as any).promise;
 
           const imageBlob = await new Promise<Blob | null>(resolve =>
             canvas.toBlob(resolve, 'image/png')
