@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "start": "netlify dev",
+    "start": "set HOST=0.0.0.0 && netlify dev",
     "build": "vite build",
     "preview": "vite preview"
   },
